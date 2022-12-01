@@ -5,35 +5,42 @@ using UnityEngine;
 
 namespace EditorUtils
 {
-    
     public class FastScrollView<TElement, TReturn>
     {
+        public delegate float GetHeight(int index, TElement element);
+
         public delegate TReturn DrawElementReturn(Rect rect, int index, TElement element);
 
         private readonly DrawElementReturn draw;
-        private readonly Func<TElement, float> getHeight;
-        private Vector2 simpleScrollPos;
-        private float elementSpacing = 2f;
-        private readonly List<ElementLayout> elementLayout = new List<ElementLayout>();
-        private readonly List<TElement> elements = new List<TElement>();
+        private readonly GetHeight         getHeight;
+        private readonly float             elementSpacing;
 
-        private Dictionary<TElement, TReturn> _results = new Dictionary<TElement, TReturn>();
-        public IReadOnlyDictionary<TElement, TReturn> Results => _results;
+        private readonly List<ElementLayout>           elementLayout = new List<ElementLayout>();
+        private readonly Dictionary<TElement, TReturn> results       = new Dictionary<TElement, TReturn>();
 
-        public FastScrollView(DrawElementReturn draw, Func<TElement, float> getHeight)
+        private List<TElement> elements;
+        private Vector2        simpleScrollPos;
+
+        public IReadOnlyDictionary<TElement, TReturn> Results => results;
+
+        public FastScrollView(DrawElementReturn draw, GetHeight getHeight, float elementSpacing = 2f) : this(new List<TElement>(), draw, getHeight, elementSpacing)
         {
-            this.elements = elements;
+            
+        }
+        public FastScrollView(List<TElement> elements, DrawElementReturn draw, GetHeight getHeight, float elementSpacing = 2f)
+        {
+            this.elements = elements ?? throw new ArgumentException(nameof(elements));
             this.draw = draw;
             this.getHeight = getHeight;
+            this.elementSpacing = elementSpacing;
         }
 
         public FastScrollView<TElement, TReturn> UpdateData(List<TElement> newElements)
         {
-            this.elements.Clear();
-            this.elements.AddRange(newElements);
-            this.elements.TrimExcess();
+            this.elements = newElements ?? throw new ArgumentException(nameof(newElements));
             this.elementLayout.Clear();
             this.elementLayout.TrimExcess();
+            this.results.Clear();
             return this;
         }
 
@@ -43,32 +50,14 @@ namespace EditorUtils
                 false,
                 EditorGUIUtility.singleLineHeight,
                 GUILayout.ExpandHeight(true), GUILayout.MinHeight(EditorGUIUtility.singleLineHeight)
-                );
+            );
             Draw(rect);
-        }
-
-        private struct ElementLayout
-        {
-            public readonly float ElementStart;
-            public readonly float ElementEnd;
-            public float ElementHeight => ElementEnd - ElementStart;
-
-            public ElementLayout(float elementStart, float elementEnd)
-            {
-                ElementStart = elementStart;
-                ElementEnd = elementEnd;
-            }
-
-            public bool ContainsY(float y)
-            {
-                return y >= ElementStart && y < ElementEnd;
-            }
         }
 
         public void Draw(Rect rect)
         {
-            _results.Clear();
-            
+            results.Clear();
+
             var totalHeight = 0f;
 
             elementLayout.Clear();
@@ -76,7 +65,7 @@ namespace EditorUtils
             {
                 var element = elements[index];
                 var elementStart = totalHeight;
-                var elementHeight = getHeight(element);
+                var elementHeight = getHeight(index, element);
                 var elementEnd = elementStart + elementHeight;
                 elementLayout.Add(new ElementLayout(elementStart, elementEnd));
                 totalHeight += elementHeight;
@@ -99,7 +88,7 @@ namespace EditorUtils
                 {
                     y = startY + viewRect.y,
                 };
-                
+
                 int drawn = 0;
                 if (elements.Count > 0)
                 {
@@ -108,7 +97,7 @@ namespace EditorUtils
                     {
                         var element = elements[j];
                         elementRect.height = elementLayout[j].ElementHeight;
-                        _results[element] = DrawElement(elementRect, j, elements[j]);
+                        results[element] = DrawElement(elementRect, j, elements[j]);
                         elementRect.y += elementRect.height;
                         elementRect.y += elementSpacing;
                         j++;
@@ -157,13 +146,34 @@ namespace EditorUtils
                 throw;
             }
         }
+
+
+        private struct ElementLayout
+        {
+            public readonly float ElementStart;
+            public readonly float ElementEnd;
+            public          float ElementHeight => ElementEnd - ElementStart;
+
+            public ElementLayout(float elementStart, float elementEnd)
+            {
+                ElementStart = elementStart;
+                ElementEnd = elementEnd;
+            }
+
+            public bool ContainsY(float y)
+            {
+                return y >= ElementStart && y < ElementEnd;
+            }
+        }
     }
 
     public class FastScrollView<TElement> : FastScrollView<TElement, bool>
     {
         public delegate void DrawSingleElement(Rect rect, int index, TElement element);
 
-        public FastScrollView(DrawSingleElement draw, Func<TElement, float> getHeight) : base(Wrap(draw), getHeight) { }
+        public FastScrollView(DrawSingleElement draw, GetHeight getHeight, float elementSpacing = 2) : base(Wrap(draw), getHeight, elementSpacing) { }
+
+        public FastScrollView(List<TElement> elements, DrawSingleElement draw, GetHeight getHeight, float elementSpacing = 2) : base(elements, Wrap(draw), getHeight, elementSpacing) { }
 
         private static DrawElementReturn Wrap(DrawSingleElement drawSingleElement)
         {
